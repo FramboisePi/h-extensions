@@ -1,36 +1,30 @@
-import { Source, Manga, Chapter, ChapterDetails, HomeSectionRequest, HomeSection, MangaTile, SearchRequest, LanguageCode, TagSection, Request } from "paperback-extensions-common"
-const NHENTAI_DOMAIN = 'https://nhentai.net'
 
-export class NHentai extends Source {
+import { Source, Manga, Chapter, ChapterDetails, HomeSectionRequest, HomeSection, MangaTile, SearchRequest, LanguageCode, TagSection, Request, SourceTag, TagType, PagedResults } from "paperback-extensions-common"
+
+const NHENTAI_DOMAIN = 'http://paperback-redirector.herokuapp.com/nh'
+
+export class NHentaiRedirected extends Source {
   constructor(cheerio: CheerioAPI) {
     super(cheerio)
   }
 
-  get version(): string { return '0.8.3' }
-  get name(): string { return 'nHentai' }
-  get description(): string { return 'Extension that pulls manga from nHentai' }
+  get version(): string { return '0.9.1' }
+  get name(): string { return 'nHentai (Geo-Unlocked)' }
+  get description(): string { return 'nHentai source which is guaranteed to work in countries the website is normally blocked. May be a tad slower than the other source' }
   get author(): string { return 'Conrad Weiser' }
-  get authorWebsite(): string { return 'http://github.com/conradweiser'}
-  get icon(): string { return "logo.png" } // The website has SVG versions, I had to find one off of a different source
+  get authorWebsite(): string { return 'http:github.com/conradweiser'}
+  get icon(): string { return "logo.png" }
   get hentaiSource(): boolean { return true }
-  getMangaShareUrl(mangaId: string): string | null { return `https://nhentai.net/g/${mangaId}`}
-
-
-  convertLanguageToCode(language: string) {
-    switch (language.toLowerCase()) {
-      case "english": return LanguageCode.ENGLISH
-      case "japanese": return LanguageCode.JAPANESE
-      case "chinese": return LanguageCode.CHINEESE
-      default: return LanguageCode.UNKNOWN
-    }
-  }
+  getMangaShareUrl(mangaId: string): string | null { return `${NHENTAI_DOMAIN}/g/${mangaId}`}
+  get sourceTags(): SourceTag[] {return [{text: "18+", type: TagType.YELLOW}]}
+  get websiteBaseURL(): string { return NHENTAI_DOMAIN }
 
   getMangaDetailsRequest(ids: string[]): Request[] {
     let requests: Request[] = []
     for (let id of ids) {
       let metadata = { 'id': id }
       requests.push(createRequestObject({
-        url: `${NHENTAI_DOMAIN}/g/${id}`,
+        url: `${NHENTAI_DOMAIN}/g/${id}/`,
         metadata: metadata,
         method: 'GET'
       }))
@@ -45,13 +39,18 @@ export class NHentai extends Source {
     let image = $('[itemprop=image]').attr('content') ?? ''
     let title = $('[itemprop=name]').attr('content') ?? ''
 
+    // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
+    title = title.replace(/(\[.+?\])/g, "").trim()
+
     // Comma seperate all of the tags and store them in our tag section 
     let tagSections: TagSection[] = [createTagSection({ id: '0', label: 'tag', tags: [] })]
     let tags = $('meta[name="twitter:description"]').attr('content')?.split(",") ?? []
-    tagSections[0].tags = tags.map((elem: string) => createTag({id: elem.trim(), label: elem.trim()}))
-
-    // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
-    title = title.replace(/(\[.+?\])/g, "").trim()
+    for (let i = 0; i < tags.length; i++) {
+      tagSections[0].tags.push(createTag({
+        id: i.toString().trim(),
+        label: tags[i]
+      }))
+    }
 
     // Grab the alternative titles
     let titles = [title]
@@ -106,7 +105,7 @@ export class NHentai extends Source {
   getChaptersRequest(mangaId: string): Request {
     let metadata = { 'id': mangaId }
     return createRequestObject({
-      url: `${NHENTAI_DOMAIN}/g/${mangaId}`,
+      url: `${NHENTAI_DOMAIN}/g/${mangaId}/`,
       method: "GET",
       metadata: metadata
     })
@@ -119,9 +118,6 @@ export class NHentai extends Source {
     // NHentai is unique, where there is only ever one chapter.
     let title = $('[itemprop=name]').attr('content') ?? ''
     let time = new Date($('time').attr('datetime') ?? '')
-
-    // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
-    title = title.replace(/(\[.+?\])/g, "").trim()
 
     // Get the correct language code
     let language: LanguageCode = LanguageCode.UNKNOWN
@@ -144,6 +140,9 @@ export class NHentai extends Source {
       }
     }
 
+    // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
+    title = title.replace(/(\[.+?\])/g, "").trim()
+
     chapters.push(createChapter({
       id: "1",                                    // Only ever one chapter on this source
       mangaId: metadata.id,
@@ -158,7 +157,7 @@ export class NHentai extends Source {
   getChapterDetailsRequest(mangaId: string, chapId: string): Request {
     let metadata = { 'mangaId': mangaId, 'chapterId': chapId }
     return createRequestObject({
-      url: `${NHENTAI_DOMAIN}/g/${mangaId}`,
+      url: `${NHENTAI_DOMAIN}/g/${mangaId}/`,
       metadata: metadata,
       method: 'GET',
     })
@@ -178,13 +177,12 @@ export class NHentai extends Source {
     // We can regular expression match out the gallery ID from this string
     let galleryId = parseInt(gallerySrc?.match(/.*\/(\d*)\//)![1]!)
 
-    // Get all of the pages
-     let counter = 1
-     for(let obj of $($('img', '.thumb-container')).toArray()) {
-      let imageType = $(obj).attr('data-src')?.match(/\.([png|jpg]{3,3})/g)![0]
-      pages.push(`https://i.nhentai.net/galleries/${galleryId}/${counter}${imageType}`)
-      counter++
-     }
+    let counter = 1
+    for(let obj of $($('img', '.thumb-container')).toArray()) {
+     let imageType = $(obj).attr('data-src')?.match(/\.([png|jpg]{3,3})/g)![0]
+     pages.push(`${NHENTAI_DOMAIN}/galleries/${galleryId}/${counter}${imageType}`)
+     counter++
+    }
 
     let chapterDetails = createChapterDetails({
       id: metadata.chapterId,
@@ -198,7 +196,7 @@ export class NHentai extends Source {
   }
 
 
-  searchRequest(query: SearchRequest, page: number): Request | null {
+  searchRequest(query: SearchRequest): Request | null {
 
     // If h-sources are disabled for the search request, always return null
     if(query.hStatus === false) {
@@ -239,14 +237,14 @@ export class NHentai extends Source {
     param = encodeURI(param)
 
     return createRequestObject({
-      url: `${NHENTAI_DOMAIN}/search/?q=${param}&page=${page}`,
+      url: `${NHENTAI_DOMAIN}/search/?q=${param}&page=1`,
       metadata: { sixDigit: false },
       timeout: 4000,
       method: "GET"
     })
   }
 
-  search(data: any, metadata: any): MangaTile[] {
+  search(data: any, metadata: any): PagedResults {
 
     let $ = this.cheerio.load(data)
     let mangaTiles: MangaTile[] = []
@@ -258,7 +256,6 @@ export class NHentai extends Source {
       let href = $('a', contextNode).attr('href')
 
       let mangaId = parseInt(href?.match(/g\/(\d*)\/\d/)![1]!)
-
       let title = $('[itemprop=name]').attr('content') ?? ''
 
       // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
@@ -269,7 +266,10 @@ export class NHentai extends Source {
         title: createIconText({ text: title }),
         image: $('[itemprop=image]').attr('content') ?? ''
       }))
-      return mangaTiles
+
+      return createPagedResults({
+        results: mangaTiles
+      })
     }
 
     let containerNode = $('.index-container')
@@ -284,10 +284,11 @@ export class NHentai extends Source {
 
 
       let title = $('.caption', currNode).text()
-      let idHref = $('a', currNode).attr('href')?.match(/\/(\d*)\//)!
 
       // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
       title = title.replace(/(\[.+?\])/g, "").trim()
+
+      let idHref = $('a', currNode).attr('href')?.match(/\/(\d*)\//)!
 
       mangaTiles.push(createMangaTile({
         id: idHref[1],
@@ -296,7 +297,11 @@ export class NHentai extends Source {
       }))
     }
 
-    return mangaTiles
+    //TODO: Other requests for furthur read more stuff?
+
+    return createPagedResults({
+      results: mangaTiles
+    }) 
   }
 
   getTagsRequest(): Request | null {
@@ -338,8 +343,15 @@ export class NHentai extends Source {
 
   getHomePageSectionRequest(): HomeSectionRequest[] | null {
 
-    let request = createRequestObject({ url: `${NHENTAI_DOMAIN}`, method: 'GET', })
-    let homeSection = createHomeSection({ id: 'latest_hentai', title: 'LATEST HENTAI', view_more: true })
+    let request = createRequestObject({ url: `${NHENTAI_DOMAIN}/site/`, method: 'GET', })
+    let homeSection = createHomeSection({ id: 'latest_hentai', title: 'LATEST HENTAI', view_more: createRequestObject({
+      url: `${NHENTAI_DOMAIN}/site/?page=1`,
+      method: 'GET',
+      metadata: {
+        page: 2
+      }
+    } )
+  })
     return [createHomeSectionRequest({ request: request, sections: [homeSection] })]
 
   }
@@ -358,8 +370,9 @@ export class NHentai extends Source {
         image = 'http:' + $('img', currNode).attr('src')!
       }
 
-      // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
       let title = $('.caption', currNode).text()
+
+      // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
       title = title.replace(/(\[.+?\])/g, "").trim()
 
       let idHref = $('a', currNode).attr('href')?.match(/\/(\d*)\//)!
@@ -375,16 +388,51 @@ export class NHentai extends Source {
     return section
   }
 
-  getViewMoreRequest(key: string, page: number): Request | null {
-    return createRequestObject({
-      url: `${NHENTAI_DOMAIN}/?page=${page}`,
-      method: 'GET'
-    })
-  }
+  getViewMoreItems(data: string, key: string, metadata: any): PagedResults {
 
-  getViewMoreItems(data: any, key: string): MangaTile[] | null {
-    let tiles = this.getHomePageSections(data, [createHomeSection({ id: 'latest_hentai', title: 'LATEST HENTAI' })])
-    return tiles![0].items ?? null;
+    // Debug out to console that this event occured
+    console.log(`getViewMoreItems request made to ${NHENTAI_DOMAIN}/site/?page=${metadata.page}`)
+
+    let $ = this.cheerio.load(data)
+    metadata.page = metadata.page + 1
+
+    let discoveredObjects: MangaTile[] = []
+
+    let containerNode = $('.index-container')
+    for (let item of $('.gallery', containerNode).toArray()) {
+      let currNode = $(item)
+      let image = $('img', currNode).attr('data-src')!
+
+      // If image is undefined, we've hit a lazyload part of the website. Adjust the scraping to target the other features
+      if (image == undefined) {
+        image = 'http:' + $('img', currNode).attr('src')!
+      }
+
+      // Clean up the title by removing all metadata, these are items enclosed within [ ] brackets
+      let title = $('.caption', currNode).text()
+      title = title.replace(/(\[.+?\])/g, "").trim()
+
+      let idHref = $('a', currNode).attr('href')?.match(/\/(\d*)\//)!
+
+      console.log(`[LOG] Discovered ${idHref[1]} in getViewMoreItems`)
+
+      discoveredObjects.push(createMangaTile({
+        id: idHref[1],
+        title: createIconText({ text: title }),
+        image: image
+      }))
+    }
+
+
+    return createPagedResults({
+      results: discoveredObjects,
+        nextPage: createRequestObject({
+        url: `${NHENTAI_DOMAIN}/site/?page=${metadata.page}`,
+        method: 'get',
+        metadata: metadata
+      })
+    })
+
   }
 
 
